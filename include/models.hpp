@@ -1,13 +1,20 @@
 #pragma once
 
 #include <algorithm>
+#include <chrono>
 #include <cstdio>
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
 
 namespace musicbot {
+
+struct MediaStream {
+    std::string url;
+    std::vector<std::string> headers;
+};
 
 struct Track {
     std::string title;
@@ -18,11 +25,8 @@ struct Track {
     std::uint64_t text_channel_id{};
     std::string thumbnail;
     bool is_live{};
-};
-
-struct MediaStream {
-    std::string url;
-    std::vector<std::string> headers;
+    std::shared_ptr<const MediaStream> media_stream;
+    std::chrono::steady_clock::time_point media_stream_resolved_at{};
 };
 
 inline std::string format_duration(const Track& track) {

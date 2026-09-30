@@ -18,6 +18,8 @@
 namespace musicbot {
 namespace {
 
+constexpr auto kMediaStreamCacheLifetime = std::chrono::minutes(30);
+
 class StartupPacketBuffer {
 public:
     explicit StartupPacketBuffer(int seconds) {
@@ -319,17 +321,25 @@ void GuildPlayer::play_track(
     });
     demuxer_pointer = &demuxer;
 
-    std::clog << "Media stream resolving: " << track.title << '\n';
-    const auto stream = extractor_.resolve_stream(track.webpage_url, stop_token);
-    if (stream.url.empty() || generation != generation_.load(std::memory_order_acquire) ||
+    MediaStream refreshed_stream;
+    const MediaStream* stream = track.media_stream.get();
+    const auto stream_age = std::chrono::steady_clock::now() - track.media_stream_resolved_at;
+    if (stream == nullptr || stream_age >= kMediaStreamCacheLifetime) {
+        std::clog << "Media stream resolving: " << track.title << '\n';
+        refreshed_stream = extractor_.resolve_stream(track.webpage_url, stop_token);
+        stream = &refreshed_stream;
+    } else {
+        std::clog << "Media stream cache hit: " << track.title << '\n';
+    }
+    if (stream->url.empty() || generation != generation_.load(std::memory_order_acquire) ||
         stop_token.stop_requested()) {
         return;
     }
     std::clog << "Media download started: " << track.title << '\n';
     stream_http(
-        stream.url,
+        stream->url,
         [&](std::span<const std::uint8_t> chunk) { return demuxer.feed(chunk); },
-        stream.headers,
+        stream->headers,
         config_.youtube_cookies_file,
         stop_token);
     if (generation != generation_.load(std::memory_order_acquire) ||

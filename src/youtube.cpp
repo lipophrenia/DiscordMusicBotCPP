@@ -5,8 +5,10 @@
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <chrono>
 #include <cctype>
 #include <iostream>
+#include <memory>
 #include <ranges>
 #include <string_view>
 #include <vector>
@@ -212,6 +214,12 @@ Track YouTubeExtractor::create_track(
     }
     track.thumbnail = json_string(item, "thumbnail");
     track.is_live = item.value("is_live", false);
+    auto media_url = selected_media_url(item);
+    if (begins_with_http(media_url)) {
+        track.media_stream = std::make_shared<const MediaStream>(
+            MediaStream{std::move(media_url), media_headers(item)});
+        track.media_stream_resolved_at = std::chrono::steady_clock::now();
+    }
     track.requester_id = requester_id;
     track.requester_name = std::move(requester_name);
     track.text_channel_id = text_channel_id;
