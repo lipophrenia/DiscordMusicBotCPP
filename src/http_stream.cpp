@@ -1,4 +1,4 @@
-#include "musicbot/http_stream.hpp"
+#include "http_stream.hpp"
 
 #include <curl/curl.h>
 

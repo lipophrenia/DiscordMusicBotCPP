@@ -1,8 +1,8 @@
-#include "musicbot/player.hpp"
+#include "player.hpp"
 
-#include "musicbot/opus_volume.hpp"
-#include "musicbot/webm_opus.hpp"
-#include "musicbot/http_stream.hpp"
+#include "opus_volume.hpp"
+#include "webm_opus.hpp"
+#include "http_stream.hpp"
 
 #include <opus/opus.h>
 

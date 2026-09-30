@@ -1,6 +1,6 @@
-#include "musicbot/bot.hpp"
-#include "musicbot/config.hpp"
-#include "musicbot/youtube.hpp"
+#include "bot.hpp"
+#include "config.hpp"
+#include "youtube.hpp"
 
 #include <filesystem>
 #include <iostream>

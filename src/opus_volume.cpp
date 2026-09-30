@@ -1,4 +1,4 @@
-#include "musicbot/opus_volume.hpp"
+#include "opus_volume.hpp"
 
 #include <opus/opus.h>
 

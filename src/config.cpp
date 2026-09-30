@@ -1,4 +1,4 @@
-#include "musicbot/config.hpp"
+#include "config.hpp"
 
 #include <charconv>
 #include <cstdlib>

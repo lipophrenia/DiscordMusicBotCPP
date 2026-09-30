@@ -1,8 +1,8 @@
 #pragma once
 
-#include "musicbot/config.hpp"
-#include "musicbot/models.hpp"
-#include "musicbot/youtube.hpp"
+#include "config.hpp"
+#include "models.hpp"
+#include "youtube.hpp"
 
 #include <dpp/dpp.h>
 

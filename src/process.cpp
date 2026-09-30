@@ -1,4 +1,4 @@
-#include "musicbot/process.hpp"
+#include "process.hpp"
 
 #include <algorithm>
 #include <array>

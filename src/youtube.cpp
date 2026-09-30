@@ -1,6 +1,6 @@
-#include "musicbot/youtube.hpp"
+#include "youtube.hpp"
 
-#include "musicbot/process.hpp"
+#include "process.hpp"
 
 #include <nlohmann/json.hpp>
 

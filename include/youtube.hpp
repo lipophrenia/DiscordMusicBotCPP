@@ -1,7 +1,7 @@
 #pragma once
 
-#include "musicbot/config.hpp"
-#include "musicbot/models.hpp"
+#include "config.hpp"
+#include "models.hpp"
 
 #include <stdexcept>
 #include <stop_token>

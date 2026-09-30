@@ -1,4 +1,4 @@
-#include "musicbot/bot.hpp"
+#include "bot.hpp"
 
 #include <algorithm>
 #include <iostream>

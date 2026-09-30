@@ -1,4 +1,4 @@
-#include "musicbot/webm_opus.hpp"
+#include "webm_opus.hpp"
 
 #include <cstdint>
 #include <iostream>
