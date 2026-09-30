@@ -118,7 +118,7 @@ printf '%s  %s\n' "$expected_checksum" "$deno_archive" | sha256sum --check --sta
 unzip -oq "$deno_archive" deno -d "$tools_dir"
 chmod 0755 "$deno_path"
 
-cmake -S "$project_dir/cpp" -B "$build_dir" -G Ninja \
+cmake -S "$project_dir" -B "$build_dir" -G Ninja \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_INSTALL_PREFIX=/usr \
     -DMUSICBOT_FETCH_DPP=ON \
