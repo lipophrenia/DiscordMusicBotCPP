@@ -1,0 +1,22 @@
+#!/bin/sh
+set -e
+
+if ! getent group discord-music-bot >/dev/null; then
+    addgroup --system discord-music-bot >/dev/null
+fi
+if ! getent passwd discord-music-bot >/dev/null; then
+    adduser --system --ingroup discord-music-bot \
+        --home /var/lib/discord-music-bot --no-create-home \
+        --disabled-login --disabled-password discord-music-bot >/dev/null
+fi
+
+if [ -f /etc/discord-music-bot/config.env ]; then
+    chown root:discord-music-bot /etc/discord-music-bot/config.env
+    chmod 0640 /etc/discord-music-bot/config.env
+fi
+
+if command -v systemctl >/dev/null 2>&1; then
+    systemctl daemon-reload || true
+fi
+
+exit 0
