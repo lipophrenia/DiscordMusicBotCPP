@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <iostream>
 #include <sstream>
+#include <string_view>
 #include <thread>
 #include <utility>
 #include <variant>
@@ -30,16 +31,35 @@ std::string safe_title(std::string title) {
     std::replace(title.begin(), title.end(), '\n', ' ');
     std::replace(title.begin(), title.end(), '\r', ' ');
     if (title.size() > 100) {
-        title.resize(97);
+        std::size_t end = 97;
+        while (end > 0 && (static_cast<unsigned char>(title[end]) & 0xC0) == 0x80) --end;
+        title.resize(end);
         title += "…";
     }
     return title;
 }
 
+std::string escape_markdown(const std::string& value) {
+    std::string result;
+    for (const auto c : value) {
+        if (std::string_view("\\`*_{}[]()<>#+-.!|~").find(c) != std::string_view::npos) {
+            result.push_back('\\');
+        }
+        result.push_back(c);
+    }
+    return result;
+}
+
+std::string track_label(const Track& track) {
+    const auto title = escape_markdown(safe_title(track.title));
+    if (track.local_filename) return "📁 " + title;
+    return "[" + title + "](" + track.webpage_url + ")";
+}
+
 std::string track_line(std::size_t index, const Track& track) {
     std::ostringstream output;
-    output << '`' << index << ".` [" << safe_title(track.title) << "](" << track.webpage_url
-           << ") · `" << format_duration(track) << '`';
+    output << '`' << index << ".` " << track_label(track)
+           << " · `" << format_duration(track) << '`';
     return output.str();
 }
 
@@ -49,7 +69,8 @@ MusicBot::MusicBot(Config config)
     : config_(std::move(config)),
       bot_(config_.token, dpp::i_default_intents | dpp::i_guild_voice_states),
       extractor_(config_),
-      players_(bot_, config_, extractor_) {
+      players_(bot_, config_, extractor_),
+      local_audio_(config_.local_audio_dir) {
     bot_.on_log([](const dpp::log_t& event) {
         if (event.severity >= dpp::ll_info) {
             std::clog << event.message << '\n';
@@ -106,6 +127,12 @@ void MusicBot::register_commands() {
     commands.emplace_back("play", "Добавить YouTube-видео в очередь", bot_.me.id)
         .add_option(dpp::command_option(
             dpp::co_string, "query", "Ссылка YouTube или поисковый запрос", true));
+    commands.emplace_back("list-local", "Показать локальные аудиозаписи", bot_.me.id)
+        .add_option(dpp::command_option(dpp::co_integer, "page", "Номер страницы", false)
+                        .set_min_value(1));
+    commands.emplace_back("play-local", "Добавить локальную аудиозапись в очередь", bot_.me.id)
+        .add_option(dpp::command_option(dpp::co_string, "file",
+            "Точное имя файла из /list-local, включая .webm", true));
     commands.emplace_back("pause", "Поставить воспроизведение на паузу", bot_.me.id);
     commands.emplace_back("resume", "Продолжить воспроизведение", bot_.me.id);
     commands.emplace_back("skip", "Пропустить текущий трек", bot_.me.id);
@@ -148,6 +175,26 @@ void MusicBot::handle_command(const dpp::slashcommand_t& event) {
         handle_play(event, std::get<std::string>(command.options.front().value));
         return;
     }
+    if (name == "list-local") {
+        std::int64_t page = 1;
+        if (!command.options.empty()) {
+            if (!std::holds_alternative<std::int64_t>(command.options.front().value)) {
+                throw UserError("Номер страницы должен быть целым числом.");
+            }
+            page = std::get<std::int64_t>(command.options.front().value);
+        }
+        if (page < 1 || page > 1000000) throw UserError("Недопустимый номер страницы.");
+        handle_list_local(event, static_cast<std::size_t>(page));
+        return;
+    }
+    if (name == "play-local") {
+        if (command.options.empty() ||
+            !std::holds_alternative<std::string>(command.options.front().value)) {
+            throw UserError("Укажите имя файла из /list-local.");
+        }
+        handle_play(event, std::get<std::string>(command.options.front().value), true);
+        return;
+    }
     if (name == "queue") {
         const auto state = player(event).snapshot(15);
         if (!state.current && state.queued.empty()) {
@@ -156,18 +203,23 @@ void MusicBot::handle_command(const dpp::slashcommand_t& event) {
         }
         std::ostringstream text;
         if (state.current) {
-            text << "▶️ Сейчас: [" << safe_title(state.current->title) << "](" <<
-                state.current->webpage_url << ") · `" << format_duration(*state.current)
+            text << "▶️ Сейчас: " << track_label(*state.current)
+                 << " · `" << format_duration(*state.current)
                  << "`\n";
         }
-        const auto shown = state.queued.size();
-        for (std::size_t index = 0; index < shown; ++index) {
-            text << track_line(index + 1, state.queued[index]) << '\n';
+        std::size_t shown{};
+        for (const auto& track : state.queued) {
+            const auto line = track_line(shown + 1, track);
+            if (text.tellp() + static_cast<std::streamoff>(line.size()) > 3500) break;
+            text << line << '\n';
+            ++shown;
         }
         if (state.total_queued > shown) {
             text << "…и ещё " << state.total_queued - shown;
         }
-        event.reply(safe_message(text.str()));
+        auto response = safe_message("");
+        response.add_embed(dpp::embed().set_title("Очередь").set_description(text.str()));
+        event.reply(response);
         return;
     }
     if (name == "now") {
@@ -176,8 +228,7 @@ void MusicBot::handle_command(const dpp::slashcommand_t& event) {
             event.reply(ephemeral_message("Сейчас ничего не играет."));
             return;
         }
-        event.reply(safe_message("▶️ Сейчас играет: [" + safe_title(current->title) + "](" +
-                                 current->webpage_url + ") · `" +
+        event.reply(safe_message("▶️ Сейчас играет: " + track_label(*current) + " · `" +
                                  format_duration(*current) + "`, добавил " +
                                  current->requester_name));
         return;
@@ -228,24 +279,26 @@ void MusicBot::handle_command(const dpp::slashcommand_t& event) {
 
 void MusicBot::handle_play(
     const dpp::slashcommand_t& event,
-    const std::string& query) {
+    const std::string& query, bool local) {
     member_voice_channel(event);
-    event.thinking(false, [this, event, query](const dpp::confirmation_callback_t& callback) {
+    event.thinking(false, [this, event, query, local](const dpp::confirmation_callback_t& callback) {
         if (callback.is_error()) {
             return;
         }
-        launch_task([this, event, query](std::stop_token stop_token) {
+        launch_task([this, event, query, local](std::stop_token stop_token) {
             try {
                 const auto user = event.command.get_issuing_user();
-                auto track = extractor_.create_track(
-                    query, snowflake_value(user.id), user.username,
-                    snowflake_value(event.command.channel_id), stop_token);
+                auto track = local
+                    ? local_audio_.create_track(query, snowflake_value(user.id), user.username,
+                                                snowflake_value(event.command.channel_id))
+                    : extractor_.create_track(query, snowflake_value(user.id), user.username,
+                                              snowflake_value(event.command.channel_id), stop_token);
                 if (stop_token.stop_requested()) {
                     return;
                 }
                 ensure_voice(event);
-                auto response = "✅ Добавлено в очередь: [" + safe_title(track.title) + "](" +
-                                track.webpage_url + ") · `" + format_duration(track) +
+                auto response = "✅ Добавлено в очередь: " + track_label(track) +
+                                " · `" + format_duration(track) +
                                 "` · позиция **";
                 const auto position = player(event).enqueue(std::move(track), event.from());
                 event.edit_original_response(
@@ -254,6 +307,39 @@ void MusicBot::handle_play(
                 if (!stop_token.stop_requested()) {
                     event.edit_original_response(
                         safe_message("❌ " + std::string(error.what())));
+                }
+            }
+        });
+    });
+}
+
+void MusicBot::handle_list_local(const dpp::slashcommand_t& event, std::size_t page) {
+    event.thinking(true, [this, event, page](const dpp::confirmation_callback_t& callback) {
+        if (callback.is_error()) return;
+        launch_task([this, event, page](std::stop_token stop_token) {
+            try {
+                if (stop_token.stop_requested()) return;
+                const auto listing = local_audio_.list(page);
+                if (stop_token.stop_requested()) return;
+                if (listing.total_files == 0) {
+                    event.edit_original_response(safe_message("Локальных записей пока нет."));
+                    return;
+                }
+                std::ostringstream text;
+                text << "Выберите имя файла для `/play-local file:...`.\n\n";
+                for (const auto& filename : listing.filenames) {
+                    text << escape_markdown(filename) << '\n';
+                }
+                auto response = safe_message("");
+                response.add_embed(dpp::embed().set_title("Локальные аудиозаписи")
+                    .set_description(text.str())
+                    .set_footer(dpp::embed_footer().set_text("Страница " + std::to_string(page) +
+                        " / " + std::to_string(listing.total_pages) + " · записей: " +
+                        std::to_string(listing.total_files))));
+                event.edit_original_response(response);
+            } catch (const std::exception& error) {
+                if (!stop_token.stop_requested()) {
+                    event.edit_original_response(safe_message("❌ " + std::string(error.what())));
                 }
             }
         });

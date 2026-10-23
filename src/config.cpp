@@ -257,6 +257,11 @@ Config Config::load(const std::filesystem::path& executable_path) {
         parse_integer<int>(values, "PREBUFFER_SECONDS", 2, 0,
                            result.buffer_ahead_seconds);
     result.configuration_path = configuration_path;
+    const auto local_audio_dir = config_value(values, "LOCAL_AUDIO_DIR");
+    if (!local_audio_dir.empty()) result.local_audio_dir = std::filesystem::u8path(local_audio_dir);
+    // Relative paths follow the process working directory, including systemd's
+    // /var/lib/discord-music-bot. No directory is created during config loading.
+    result.local_audio_dir = std::filesystem::absolute(result.local_audio_dir).lexically_normal();
 
     if (!config_value(values, "YOUTUBE_COOKIES_FROM_BROWSER").empty()) {
         throw ConfigError(

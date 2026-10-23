@@ -19,6 +19,7 @@ struct MediaStream {
 struct Track {
     std::string title;
     std::string webpage_url;
+    std::optional<std::string> local_filename;
     std::optional<std::int64_t> duration_seconds;
     std::uint64_t requester_id{};
     std::string requester_name;

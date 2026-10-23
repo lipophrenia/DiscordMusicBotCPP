@@ -16,6 +16,7 @@ struct Config {
     int idle_timeout_seconds{300};
     int buffer_ahead_seconds{60};
     int prebuffer_seconds{2};
+    std::filesystem::path local_audio_dir{"local-audio"};
     std::filesystem::path yt_dlp_path{"yt-dlp"};
     std::filesystem::path deno_path{"deno"};
     std::optional<std::filesystem::path> youtube_cookies_file;

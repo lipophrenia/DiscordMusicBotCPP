@@ -20,15 +20,15 @@ int main(int argc, char** argv) {
         musicbot::YouTubeExtractor extractor(config);
         std::string version;
         if (!extractor.check_available(version)) {
-            std::cerr << "Configuration error: YouTube helpers are unavailable: "
-                      << version << '\n';
-            return 2;
+            std::cerr << "Warning: YouTube helpers are unavailable: " << version
+                      << "; local playback remains available\n";
         }
         std::clog << "Configuration: "
                   << (config.configuration_path ? config.configuration_path->string()
                                                 : "environment variables") << '\n'
                   << "Media engine: native HTTP + WebM/Opus (no FFmpeg/GStreamer)\n"
                   << "YouTube helpers: " << version << '\n'
+                  << "Local audio directory: " << config.local_audio_dir.string() << '\n'
                   << "Buffer ahead: " << config.buffer_ahead_seconds << " seconds\n"
                   << "Startup prebuffer: " << config.prebuffer_seconds << " seconds\n"
                   << "YouTube cookies: "

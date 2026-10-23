@@ -50,6 +50,7 @@ find_library(OPUS_LIBRARY NAMES opus REQUIRED)
 
 add_library(musicbot_core
     src/config.cpp
+    src/local_audio.cpp
     src/process.cpp
     src/http_stream.cpp
     src/youtube.cpp
@@ -88,6 +89,15 @@ if(BUILD_TESTING)
     add_executable(webm_opus_tests tests/webm_opus_tests.cpp)
     target_link_libraries(webm_opus_tests PRIVATE musicbot_core)
     add_test(NAME webm_opus_tests COMMAND webm_opus_tests)
+    add_executable(local_audio_tests tests/local_audio_tests.cpp)
+    target_include_directories(local_audio_tests PRIVATE "${OPUS_INCLUDE_DIR}")
+    target_link_libraries(local_audio_tests PRIVATE musicbot_core "${OPUS_LIBRARY}")
+    if(MSVC)
+        target_compile_options(local_audio_tests PRIVATE /utf-8)
+    else()
+        target_compile_options(local_audio_tests PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    add_test(NAME local_audio_tests COMMAND local_audio_tests)
 endif()
 
 set_target_properties(DiscordMusicBot PROPERTIES OUTPUT_NAME discord-music-bot)

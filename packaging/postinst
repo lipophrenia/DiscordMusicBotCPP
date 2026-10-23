@@ -15,6 +15,9 @@ if [ -f /etc/discord-music-bot/config.env ]; then
     chmod 0640 /etc/discord-music-bot/config.env
 fi
 
+install -d -o discord-music-bot -g discord-music-bot -m 0750 \
+    /var/lib/discord-music-bot/local-audio
+
 if command -v systemctl >/dev/null 2>&1; then
     systemctl daemon-reload || true
 fi

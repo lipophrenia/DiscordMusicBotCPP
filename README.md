@@ -85,10 +85,11 @@ accepts environment variables, `.env` in the current/executable directory, and
 | `DISCORD_TOKEN` | required | Discord bot token |
 | `DISCORD_GUILD_ID` | empty | Development guild for immediate command updates |
 | `DEFAULT_VOLUME` | `50` | Initial volume, 0–200% |
-| `MAX_TRACK_DURATION` | `10800` | Track limit in seconds; 0 disables it |
+| `MAX_TRACK_DURATION` | `10800` | YouTube track limit in seconds; 0 disables it |
 | `IDLE_TIMEOUT` | `300` | Disconnect timeout, minimum 30 seconds |
 | `BUFFER_AHEAD_SECONDS` | `60` | Download lead, 5–3600 seconds |
 | `PREBUFFER_SECONDS` | `2` | Initial in-process Opus buffer |
+| `LOCAL_AUDIO_DIR` | `local-audio` | Directory containing preconverted WebM/Opus recordings |
 | `YOUTUBE_COOKIES_FILE` | empty | Absolute/relative Netscape cookie file |
 | `YT_DLP_PATH` | `yt-dlp` | Extractor executable |
 | `DENO_PATH` | `deno` | JavaScript runtime used only by the extractor |
@@ -110,7 +111,69 @@ YOUTUBE_COOKIES_FILE=/etc/discord-music-bot/youtube-cookies.txt
 ## Commands
 
 Commands are top-level: `/join`, `/play`, `/pause`, `/resume`, `/skip`, `/stop`,
-`/leave`, `/queue`, `/now`, and `/volume`. There is no `/music` prefix.
+`/leave`, `/queue`, `/now`, `/volume`, `/list-local`, and `/play-local`.
+There is no `/music` prefix.
+
+## Local audio
+
+Set `LOCAL_AUDIO_DIR` to a directory containing **WebM with Opus audio**.
+Relative paths use the process working directory. The default is `local-audio`;
+for the systemd service that means `/var/lib/discord-music-bot/local-audio`.
+The Debian package creates that directory with access for the service user.
+Only regular `.webm` files directly inside the directory are listed; subdirectories,
+hidden files, symbolic links and other formats are ignored.
+
+Commands:
+
+```text
+/list-local
+/list-local page:2
+/play-local file:My song.webm
+```
+
+`file` is the exact filename including the extension, as shown by `/list-local`.
+Spaces and UTF-8 names are supported. Filenames stay valid when other recordings
+are added; there are no unstable numeric IDs. The list is sorted and paginated
+with five recordings per page, and refreshed on every request.
+
+`/play-local` joins your voice channel and adds the recording to the shared
+queue, starting immediately if the player is idle. YouTube and local recordings
+can be mixed. `/pause`, `/resume`, `/skip`, `/stop`, `/volume`, `/queue` and `/now`
+apply to both sources. Local entries have no YouTube link; duration is displayed
+as unknown because the bot does not scan the entire file before queueing it.
+`MAX_TRACK_DURATION` only applies to YouTube metadata.
+
+Local playback uses the same streaming demuxer, bounded buffer and libopus
+volume processing. It does not invoke yt-dlp, Deno, or FFmpeg. Missing YouTube
+helpers produce a startup warning and do not prevent local playback. A missing
+library directory is treated as an empty library; unreadable/deleted/invalid
+files report an error and the player moves to the next queued recording.
+
+### Offline conversion
+
+Install FFmpeg on the machine doing the conversion, then run:
+
+```bash
+mkdir -p local-audio
+sh scripts/prepare-local-audio.sh 'source.mp3' 'local-audio/My song.webm'
+```
+
+The script produces audio-only WebM/Opus, 48 kHz, stereo, 128 kbit/s, with 20 ms
+packets. It leaves existing output files intact. FFmpeg is not a bot runtime
+dependency. Convert into a staging directory and then move completed files into
+the library so the bot cannot select a partially written recording.
+
+For a packaged service, copy the prepared recording with suitable permissions:
+
+```bash
+sudo install -o root -g discord-music-bot -m 640 'local-audio/My song.webm' \
+  '/var/lib/discord-music-bot/local-audio/My song.webm'
+```
+
+The service's `ProtectHome=true` prevents access to libraries under `/home`;
+use its state directory or another location readable by `discord-music-bot`.
+Restart the bot after changing `LOCAL_AUDIO_DIR`. Adding/removing files does not
+require a restart.
 
 ## Manual development build
 

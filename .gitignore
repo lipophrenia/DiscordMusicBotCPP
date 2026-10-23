@@ -3,3 +3,4 @@ build/
 dist/
 .env
 *cookies.txt
+_music_storage/

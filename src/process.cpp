@@ -12,6 +12,7 @@
 #define NOMINMAX
 #include <windows.h>
 #else
+#include <cerrno>
 #include <csignal>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -209,6 +210,23 @@ ProcessResult stream_process_platform(
 
 #else
 
+// Best-effort diagnostics after a failed exec: no allocation or exceptions in
+// the forked child, and only async-signal-safe system calls.
+void write_stderr(const char* data, std::size_t size) noexcept {
+    while (size > 0) {
+        const auto written = write(STDERR_FILENO, data, size);
+        if (written > 0) {
+            const auto count = static_cast<std::size_t>(written);
+            data += count;
+            size -= count;
+        } else if (written < 0 && errno == EINTR) {
+            continue;
+        } else {
+            return;
+        }
+    }
+}
+
 ProcessResult stream_process_platform(
     const std::filesystem::path& executable,
     const std::vector<std::string>& arguments,
@@ -257,9 +275,9 @@ ProcessResult stream_process_platform(
         execvp(argv.front(), argv.data());
         static constexpr char prefix[] = "failed to execute ";
         static constexpr char suffix[] = "\n";
-        static_cast<void>(write(STDERR_FILENO, prefix, sizeof(prefix) - 1));
-        static_cast<void>(write(STDERR_FILENO, storage.front().data(), storage.front().size()));
-        static_cast<void>(write(STDERR_FILENO, suffix, sizeof(suffix) - 1));
+        write_stderr(prefix, sizeof(prefix) - 1);
+        write_stderr(storage.front().data(), storage.front().size());
+        write_stderr(suffix, sizeof(suffix) - 1);
         _exit(127);
     }
 

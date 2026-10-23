@@ -3,6 +3,7 @@
 #include "opus_volume.hpp"
 #include "webm_opus.hpp"
 #include "http_stream.hpp"
+#include "local_audio.hpp"
 
 #include <opus/opus.h>
 
@@ -321,27 +322,38 @@ void GuildPlayer::play_track(
     });
     demuxer_pointer = &demuxer;
 
-    MediaStream refreshed_stream;
-    const MediaStream* stream = track.media_stream.get();
-    const auto stream_age = std::chrono::steady_clock::now() - track.media_stream_resolved_at;
-    if (stream == nullptr || stream_age >= kMediaStreamCacheLifetime) {
-        std::clog << "Media stream resolving: " << track.title << '\n';
-        refreshed_stream = extractor_.resolve_stream(track.webpage_url, stop_token);
-        stream = &refreshed_stream;
+    if (track.local_filename) {
+        std::clog << "Local media reading: " << track.title << '\n';
+        LocalAudioLibrary library(config_.local_audio_dir);
+        if (!library.stream(*track.local_filename,
+                [&](std::span<const std::uint8_t> chunk) {
+                    if (stop_token.stop_requested() ||
+                        generation != generation_.load(std::memory_order_acquire)) return false;
+                    return demuxer.feed(chunk);
+                }, stop_token)) return;
     } else {
-        std::clog << "Media stream cache hit: " << track.title << '\n';
+        MediaStream refreshed_stream;
+        const MediaStream* stream = track.media_stream.get();
+        const auto stream_age = std::chrono::steady_clock::now() - track.media_stream_resolved_at;
+        if (stream == nullptr || stream_age >= kMediaStreamCacheLifetime) {
+            std::clog << "Media stream resolving: " << track.title << '\n';
+            refreshed_stream = extractor_.resolve_stream(track.webpage_url, stop_token);
+            stream = &refreshed_stream;
+        } else {
+            std::clog << "Media stream cache hit: " << track.title << '\n';
+        }
+        if (stream->url.empty() || generation != generation_.load(std::memory_order_acquire) ||
+            stop_token.stop_requested()) {
+            return;
+        }
+        std::clog << "Media download started: " << track.title << '\n';
+        stream_http(
+            stream->url,
+            [&](std::span<const std::uint8_t> chunk) { return demuxer.feed(chunk); },
+            stream->headers,
+            config_.youtube_cookies_file,
+            stop_token);
     }
-    if (stream->url.empty() || generation != generation_.load(std::memory_order_acquire) ||
-        stop_token.stop_requested()) {
-        return;
-    }
-    std::clog << "Media download started: " << track.title << '\n';
-    stream_http(
-        stream->url,
-        [&](std::span<const std::uint8_t> chunk) { return demuxer.feed(chunk); },
-        stream->headers,
-        config_.youtube_cookies_file,
-        stop_token);
     if (generation != generation_.load(std::memory_order_acquire) ||
         stop_token.stop_requested()) {
         return;
