@@ -142,7 +142,7 @@ void stream_http(
                    "REDIR_PROTOCOLS");
 #endif
     require_option(curl_easy_setopt(handle, CURLOPT_USERAGENT,
-                                    "Mozilla/5.0 DiscordMusicBot/2.0"), "USERAGENT");
+                                    "Mozilla/5.0 DiscordMusicBot/2.1"), "USERAGENT");
     require_option(curl_easy_setopt(handle, CURLOPT_CONNECTTIMEOUT, 20L), "CONNECTTIMEOUT");
     require_option(curl_easy_setopt(handle, CURLOPT_LOW_SPEED_LIMIT, 1024L), "LOW_SPEED_LIMIT");
     require_option(curl_easy_setopt(handle, CURLOPT_LOW_SPEED_TIME, 30L), "LOW_SPEED_TIME");
