@@ -55,6 +55,7 @@ add_library(musicbot_core
     src/http_stream.cpp
     src/youtube.cpp
     src/webm_opus.cpp
+    src/startup_packet_buffer.cpp
     src/opus_volume.cpp
 )
 target_include_directories(musicbot_core
@@ -98,6 +99,9 @@ if(BUILD_TESTING)
         target_compile_options(local_audio_tests PRIVATE -Wall -Wextra -Wpedantic)
     endif()
     add_test(NAME local_audio_tests COMMAND local_audio_tests)
+    add_executable(startup_packet_buffer_tests tests/startup_packet_buffer_tests.cpp)
+    target_link_libraries(startup_packet_buffer_tests PRIVATE musicbot_core)
+    add_test(NAME startup_packet_buffer_tests COMMAND startup_packet_buffer_tests)
 endif()
 
 set_target_properties(DiscordMusicBot PROPERTIES OUTPUT_NAME discord-music-bot)

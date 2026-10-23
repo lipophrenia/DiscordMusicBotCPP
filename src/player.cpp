@@ -4,8 +4,7 @@
 #include "webm_opus.hpp"
 #include "http_stream.hpp"
 #include "local_audio.hpp"
-
-#include <opus/opus.h>
+#include "startup_packet_buffer.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -20,50 +19,6 @@ namespace musicbot {
 namespace {
 
 constexpr auto kMediaStreamCacheLifetime = std::chrono::minutes(30);
-
-class StartupPacketBuffer {
-public:
-    explicit StartupPacketBuffer(int seconds) {
-        const auto duration = static_cast<std::size_t>(std::max(seconds, 0));
-        packets_.reserve(std::min(duration * 50U + 1U, std::size_t{4096}));
-        bytes_.reserve(std::min(duration * 96U * 1024U, std::size_t{2U * 1024U * 1024U}));
-    }
-
-    void push(std::span<const std::uint8_t> packet) {
-        packets_.push_back(Packet{bytes_.size(), packet.size()});
-        bytes_.insert(bytes_.end(), packet.begin(), packet.end());
-    }
-
-    template <typename Sender>
-    bool flush(Sender&& sender) {
-        for (const auto& packet : packets_) {
-            if (!sender(
-                    std::span<const std::uint8_t>(bytes_).subspan(packet.offset, packet.size))) {
-                return false;
-            }
-        }
-        clear();
-        return true;
-    }
-
-    [[nodiscard]] bool empty() const noexcept {
-        return packets_.empty();
-    }
-
-private:
-    struct Packet {
-        std::size_t offset{};
-        std::size_t size{};
-    };
-
-    void clear() noexcept {
-        packets_.clear();
-        bytes_.clear();
-    }
-
-    std::vector<Packet> packets_;
-    std::vector<std::uint8_t> bytes_;
-};
 
 }  // namespace
 
@@ -218,9 +173,13 @@ void GuildPlayer::run(std::stop_token stop_token) {
         }
 
         try {
+            const auto voice_wait_started = std::chrono::steady_clock::now();
             if (!wait_for_voice(generation, stop_token)) {
                 throw std::runtime_error("voice connection is not ready");
             }
+            const auto voice_wait_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - voice_wait_started).count();
+            std::clog << "Voice ready: " << track->title << " (waited " << voice_wait_ms << " ms)\n";
             announce(track->text_channel_id,
                      "▶️ Сейчас играет: **" + track->title + "** (`" +
                          format_duration(*track) + "`), добавил " + track->requester_name);
@@ -250,9 +209,10 @@ void GuildPlayer::play_track(
     std::stop_token stop_token) {
     using namespace std::chrono_literals;
     std::optional<OpusVolume> volume_processor;
-    StartupPacketBuffer startup_packets(config_.prebuffer_seconds);
-    double startup_seconds{};
-    bool startup_complete = config_.prebuffer_seconds == 0;
+    const bool local = track.local_filename.has_value();
+    StartupPacketBuffer startup_packets(local ? 0 : config_.prebuffer_seconds);
+    const auto playback_started = std::chrono::steady_clock::now();
+    bool first_packet = true;
 
     const auto send_packet = [&](std::span<const std::uint8_t> packet) {
         if (stop_token.stop_requested() ||
@@ -263,8 +223,10 @@ void GuildPlayer::play_track(
         if (voice == nullptr || !voice->is_ready()) {
             throw std::runtime_error("voice connection lost");
         }
-        while (voice->get_secs_remaining() >
-               static_cast<float>(config_.buffer_ahead_seconds)) {
+        // Local files enqueue as fast as they are read; only network streams
+        // limit download lead. DPP handles playback timing for both sources.
+        while (!local && voice->get_secs_remaining() >
+                             static_cast<float>(config_.buffer_ahead_seconds)) {
             if (stop_token.stop_requested() ||
                 generation != generation_.load(std::memory_order_acquire)) {
                 return false;
@@ -275,21 +237,23 @@ void GuildPlayer::play_track(
                 throw std::runtime_error("voice connection lost");
             }
         }
+        // skip/stop may arrive while waiting for queue space.
+        if (stop_token.stop_requested() ||
+            generation != generation_.load(std::memory_order_acquire)) return false;
         voice->send_audio_opus(packet.data(), packet.size());
+        if (first_packet) {
+            first_packet = false;
+            const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - playback_started).count();
+            std::clog << (local ? "Local" : "Network") << " media first packet queued: "
+                      << track.title << " (" << elapsed << " ms after voice ready)\n";
+        }
         return true;
     };
 
-    const auto flush_startup = [&] {
-        const auto had_packets = !startup_packets.empty();
-        if (!startup_packets.flush(send_packet)) {
-            return false;
-        }
-        startup_complete = true;
-        if (had_packets) {
-            std::clog << "Media prebuffer ready: " << track.title << " ("
-                      << startup_seconds << " seconds)\n";
-        }
-        return true;
+    const auto log_prebuffer = [&] {
+        std::clog << "Media prebuffer ready: " << track.title << " ("
+                  << startup_packets.seconds() << " seconds)\n";
     };
 
     WebmOpusDemuxer* demuxer_pointer{};
@@ -306,19 +270,10 @@ void GuildPlayer::play_track(
             }
             outgoing = volume_processor->process(packet, current_volume);
         }
-        if (startup_complete) {
-            return send_packet(outgoing);
-        }
-        const auto samples = opus_packet_get_nb_samples(
-            outgoing.data(), static_cast<opus_int32>(outgoing.size()), 48000);
-        if (samples <= 0) {
-            throw std::runtime_error("invalid Opus packet duration");
-        }
-        startup_packets.push(outgoing);
-        startup_seconds += static_cast<double>(samples) / 48000.0;
-        return startup_seconds < static_cast<double>(config_.prebuffer_seconds)
-                   ? true
-                   : flush_startup();
+        const bool was_ready = startup_packets.ready();
+        const bool sent = startup_packets.feed(outgoing, send_packet);
+        if (sent && !was_ready && startup_packets.ready()) log_prebuffer();
+        return sent;
     });
     demuxer_pointer = &demuxer;
 
@@ -359,10 +314,11 @@ void GuildPlayer::play_track(
         return;
     }
     demuxer.finish();
-    if (!startup_complete && !flush_startup()) {
-        return;
+    if (!startup_packets.ready()) {
+        if (!startup_packets.finish(send_packet)) return;
+        log_prebuffer();
     }
-    std::clog << "Media download completed: " << track.title << '\n';
+    std::clog << "Media reading completed: " << track.title << '\n';
 
     while (generation == generation_.load(std::memory_order_acquire) &&
            !stop_token.stop_requested()) {

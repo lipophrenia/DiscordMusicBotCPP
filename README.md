@@ -17,8 +17,9 @@ the bot would make releases fragile without reducing media CPU or memory use.
                             download cursor          playback cursor
 ```
 
-Playback starts after `PREBUFFER_SECONDS` (2 seconds by default). The download
-cursor may then lead playback by `BUFFER_AHEAD_SECONDS` (60 seconds by default).
+Network playback starts after collecting `PREBUFFER_SECONDS` of audio (2 seconds
+by default). The download cursor may then lead playback by `BUFFER_AHEAD_SECONDS`
+(60 seconds by default). These two settings do not apply to local files.
 Backpressure pauses libcurl, so long tracks cannot consume unbounded memory.
 At 100% volume, complete WebM blocks are passed through without a bot-owned
 audio-payload copy or Opus transcoding. A copy is retained only for the startup
@@ -87,8 +88,8 @@ accepts environment variables, `.env` in the current/executable directory, and
 | `DEFAULT_VOLUME` | `50` | Initial volume, 0–200% |
 | `MAX_TRACK_DURATION` | `10800` | YouTube track limit in seconds; 0 disables it |
 | `IDLE_TIMEOUT` | `300` | Disconnect timeout, minimum 30 seconds |
-| `BUFFER_AHEAD_SECONDS` | `60` | Download lead, 5–3600 seconds |
-| `PREBUFFER_SECONDS` | `2` | Initial in-process Opus buffer |
+| `BUFFER_AHEAD_SECONDS` | `60` | Network download lead, 5–3600 seconds |
+| `PREBUFFER_SECONDS` | `2` | Network startup Opus buffer; ignored for local files |
 | `LOCAL_AUDIO_DIR` | `local-audio` | Directory containing preconverted WebM/Opus recordings |
 | `YOUTUBE_COOKIES_FILE` | empty | Absolute/relative Netscape cookie file |
 | `YT_DLP_PATH` | `yt-dlp` | Extractor executable |
@@ -143,8 +144,18 @@ apply to both sources. Local entries have no YouTube link; duration is displayed
 as unknown because the bot does not scan the entire file before queueing it.
 `MAX_TRACK_DURATION` only applies to YouTube metadata.
 
-Local playback uses the same streaming demuxer, bounded buffer and libopus
-volume processing. It does not invoke yt-dlp, Deno, or FFmpeg. Missing YouTube
+Local playback uses the same streaming demuxer and libopus volume processing,
+with **no startup prebuffer**. Each decoded WebM block is passed straight to the
+voice sender. Local files are read and enqueued in DPP as fast as file I/O and
+Opus processing allow, with no queue lead limit. DPP sends packets at playback
+speed; the first packet does not wait for the rest of the file. `/play-local`
+enqueues the track before sending its final response to Discord, without
+waiting for a deferred `thinking` acknowledgement.
+
+A newly established voice connection must still complete its Discord handshake.
+The log separates `Voice ready` wait time from `Local media first packet queued`
+time so a connection delay can be distinguished from file/codec processing.
+Local playback does not invoke yt-dlp, Deno, or FFmpeg. Missing YouTube
 helpers produce a startup warning and do not prevent local playback. A missing
 library directory is treated as an empty library; unreadable/deleted/invalid
 files report an error and the player moves to the next queued recording.

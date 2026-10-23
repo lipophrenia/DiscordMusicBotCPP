@@ -192,7 +192,7 @@ void MusicBot::handle_command(const dpp::slashcommand_t& event) {
             !std::holds_alternative<std::string>(command.options.front().value)) {
             throw UserError("Укажите имя файла из /list-local.");
         }
-        handle_play(event, std::get<std::string>(command.options.front().value), true);
+        handle_play_local(event, std::get<std::string>(command.options.front().value));
         return;
     }
     if (name == "queue") {
@@ -279,20 +279,17 @@ void MusicBot::handle_command(const dpp::slashcommand_t& event) {
 
 void MusicBot::handle_play(
     const dpp::slashcommand_t& event,
-    const std::string& query, bool local) {
+    const std::string& query) {
     member_voice_channel(event);
-    event.thinking(false, [this, event, query, local](const dpp::confirmation_callback_t& callback) {
+    event.thinking(false, [this, event, query](const dpp::confirmation_callback_t& callback) {
         if (callback.is_error()) {
             return;
         }
-        launch_task([this, event, query, local](std::stop_token stop_token) {
+        launch_task([this, event, query](std::stop_token stop_token) {
             try {
                 const auto user = event.command.get_issuing_user();
-                auto track = local
-                    ? local_audio_.create_track(query, snowflake_value(user.id), user.username,
-                                                snowflake_value(event.command.channel_id))
-                    : extractor_.create_track(query, snowflake_value(user.id), user.username,
-                                              snowflake_value(event.command.channel_id), stop_token);
+                auto track = extractor_.create_track(query, snowflake_value(user.id), user.username,
+                                                      snowflake_value(event.command.channel_id), stop_token);
                 if (stop_token.stop_requested()) {
                     return;
                 }
@@ -311,6 +308,25 @@ void MusicBot::handle_play(
             }
         });
     });
+}
+
+void MusicBot::handle_play_local(const dpp::slashcommand_t& event, const std::string& filename) {
+    member_voice_channel(event);
+    const auto user = event.command.get_issuing_user();
+    Track track;
+    try {
+        // Only validate the named file; no catalog scan, media scan or extractor.
+        track = local_audio_.create_track(filename, snowflake_value(user.id), user.username,
+                                          snowflake_value(event.command.channel_id));
+    } catch (const LocalAudioError& error) {
+        throw UserError(error.what());
+    }
+    ensure_voice(event);
+    auto response = "✅ Добавлено в очередь: " + track_label(track) + " · позиция **";
+    const auto position = player(event).enqueue(std::move(track), event.from());
+    // Playback must not wait for a Discord REST callback. One final response is
+    // sufficient for this fast local operation; no deferred 'thinking' round-trip.
+    event.reply(safe_message(response + std::to_string(position) + "**"));
 }
 
 void MusicBot::handle_list_local(const dpp::slashcommand_t& event, std::size_t page) {

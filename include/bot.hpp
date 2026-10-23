@@ -42,7 +42,8 @@ private:
 
     void register_commands();
     void handle_command(const dpp::slashcommand_t& event);
-    void handle_play(const dpp::slashcommand_t& event, const std::string& query, bool local = false);
+    void handle_play(const dpp::slashcommand_t& event, const std::string& query);
+    void handle_play_local(const dpp::slashcommand_t& event, const std::string& filename);
     void handle_list_local(const dpp::slashcommand_t& event, std::size_t page);
     void ensure_voice(const dpp::slashcommand_t& event);
     dpp::discord_voice_client* require_same_voice(const dpp::slashcommand_t& event);
