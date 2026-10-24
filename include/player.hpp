@@ -45,6 +45,8 @@ public:
     [[nodiscard]] bool busy() const;
     [[nodiscard]] bool skip();
     std::size_t stop();
+    void reset_voice_ready();
+    void mark_voice_ready(dpp::discord_voice_client* voice);
     void set_paused(bool paused);
     [[nodiscard]] bool paused() const;
     void set_volume(int percent);
@@ -63,6 +65,7 @@ private:
     const YouTubeExtractor& extractor_;
     std::uint64_t guild_id_{};
     std::atomic<dpp::discord_client*> shard_{};
+    std::atomic<dpp::discord_voice_client*> ready_voice_{};
     mutable std::mutex mutex_;
     std::condition_variable condition_;
     std::deque<Track> queue_;
@@ -80,6 +83,7 @@ public:
     ~PlayerManager();
 
     GuildPlayer& get(std::uint64_t guild_id, dpp::discord_client* shard);
+    void mark_voice_ready(dpp::discord_voice_client* voice);
     void remove(std::uint64_t guild_id);
     void shutdown();
 

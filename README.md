@@ -152,9 +152,14 @@ speed; the first packet does not wait for the rest of the file. `/play-local`
 enqueues the track before sending its final response to Discord, without
 waiting for a deferred `thinking` acknowledgement.
 
-A newly established voice connection must still complete its Discord handshake.
-The log separates `Voice ready` wait time from `Local media first packet queued`
-time so a connection delay can be distinguished from file/codec processing.
+A newly established voice connection must still complete its Discord handshake,
+including DAVE negotiation. Playback waits for DPP's `on_voice_ready` event before
+reading the track or announcing playback: `is_ready()` alone only confirms the
+transport key, and DPP encrypts packets when they enter its queue. This prevents
+the beginning of a recording from being queued before DAVE is ready.
+The log records `Voice session ready` with the DAVE status and separates
+`Voice ready` wait time from `Local media first packet queued` time so a
+connection delay can be distinguished from file/codec processing.
 Local playback does not invoke yt-dlp, Deno, or FFmpeg. Missing YouTube
 helpers produce a startup warning and do not prevent local playback. A missing
 library directory is treated as an empty library; unreadable/deleted/invalid

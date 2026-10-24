@@ -76,6 +76,11 @@ MusicBot::MusicBot(Config config)
             std::clog << event.message << '\n';
         }
     });
+    bot_.on_voice_ready([this](const dpp::voice_ready_t& event) {
+        if (!shutting_down_.load(std::memory_order_acquire)) {
+            players_.mark_voice_ready(event.voice_client);
+        }
+    });
     bot_.on_ready([this](const dpp::ready_t&) {
         if (dpp::run_once<struct register_music_commands>()) {
             register_commands();
@@ -379,6 +384,9 @@ void MusicBot::ensure_voice(const dpp::slashcommand_t& event) {
         }
         shard->disconnect_voice(event.command.guild_id);
     }
+    // Create the player before connecting, including for /join, so the ready
+    // event cannot be lost before the first /play-local or /play command.
+    player(event).reset_voice_ready();
     if (!guild->connect_member_voice(bot_, event.command.get_issuing_user().id, false, true)) {
         throw UserError("Не удалось подключиться к голосовому каналу.");
     }

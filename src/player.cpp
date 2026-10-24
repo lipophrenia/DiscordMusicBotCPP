@@ -103,6 +103,19 @@ std::size_t GuildPlayer::stop() {
     return removed;
 }
 
+void GuildPlayer::reset_voice_ready() {
+    ready_voice_.store(nullptr, std::memory_order_release);
+}
+
+void GuildPlayer::mark_voice_ready(dpp::discord_voice_client* voice) {
+    // Ignore a late callback from a connection that has been replaced.
+    if (voice != nullptr && voice == voice_client()) {
+        ready_voice_.store(voice, std::memory_order_release);
+        std::clog << "Voice session ready: guild=" << guild_id_
+                  << " DAVE=" << (voice->is_end_to_end_encrypted() ? "active" : "inactive") << '\n';
+    }
+}
+
 void GuildPlayer::set_paused(bool paused) {
     auto* voice = voice_client();
     if (voice == nullptr || !busy()) {
@@ -160,6 +173,7 @@ void GuildPlayer::run(std::stop_token stop_token) {
             if (!ready) {
                 auto* shard = shard_.load(std::memory_order_acquire);
                 lock.unlock();
+                reset_voice_ready();
                 if (shard != nullptr) {
                     shard->disconnect_voice(dpp::snowflake(guild_id_));
                 }
@@ -175,7 +189,7 @@ void GuildPlayer::run(std::stop_token stop_token) {
         try {
             const auto voice_wait_started = std::chrono::steady_clock::now();
             if (!wait_for_voice(generation, stop_token)) {
-                throw std::runtime_error("voice connection is not ready");
+                throw std::runtime_error("voice session did not become ready (waiting for on_voice_ready)");
             }
             const auto voice_wait_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::steady_clock::now() - voice_wait_started).count();
@@ -349,7 +363,12 @@ bool GuildPlayer::wait_for_voice(
             generation != generation_.load(std::memory_order_acquire)) {
             return false;
         }
-        if (auto* voice = voice_client(); voice != nullptr && voice->is_ready()) {
+        // is_ready() only means that the transport key has arrived. DPP may
+        // still be negotiating DAVE, and encrypts audio when it is enqueued.
+        // Wait for on_voice_ready before consuming any of the track.
+        auto* ready_voice = ready_voice_.load(std::memory_order_acquire);
+        if (auto* voice = voice_client();
+            voice != nullptr && voice == ready_voice && voice->is_ready()) {
             return true;
         }
         std::this_thread::sleep_for(50ms);
@@ -380,6 +399,13 @@ GuildPlayer& PlayerManager::get(std::uint64_t guild_id, dpp::discord_client* sha
         player = std::make_unique<GuildPlayer>(bot_, config_, extractor_, guild_id, shard);
     }
     return *player;
+}
+
+void PlayerManager::mark_voice_ready(dpp::discord_voice_client* voice) {
+    if (voice == nullptr) return;
+    std::scoped_lock lock(mutex_);
+    const auto iterator = players_.find(static_cast<std::uint64_t>(voice->server_id));
+    if (iterator != players_.end()) iterator->second->mark_voice_ready(voice);
 }
 
 void PlayerManager::remove(std::uint64_t guild_id) {
