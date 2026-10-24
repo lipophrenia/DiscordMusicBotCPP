@@ -27,18 +27,18 @@ std::string LocalAudioMenus::select(std::uint64_t interaction_id, std::size_t in
     std::scoped_lock lock(mutex_);
     const auto found = menus_.find(interaction_id);
     if (found == menus_.end()) {
-        throw LocalAudioError("Этот список устарел. Откройте /list-local заново.");
+        throw LocalAudioError("This list has expired. Run /list-local again.");
     }
     if (now - found->second.created >= lifetime) {
         menus_.erase(found);
-        throw LocalAudioError("Этот список устарел. Откройте /list-local заново.");
+        throw LocalAudioError("This list has expired. Run /list-local again.");
     }
     const auto& menu = found->second;
     if (menu.user_id != user_id || menu.guild_id != guild_id) {
-        throw LocalAudioError("Откройте свой список через /list-local.");
+        throw LocalAudioError("Open your own list with /list-local.");
     }
     if (index >= menu.filenames.size()) {
-        throw LocalAudioError("Запись отсутствует в этом списке. Откройте /list-local заново.");
+        throw LocalAudioError("This track is not in the list. Run /list-local again.");
     }
     return menu.filenames[index];
 }

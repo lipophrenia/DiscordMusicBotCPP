@@ -68,7 +68,7 @@ std::uint64_t local_button_number(std::string_view text) {
     std::uint64_t number{};
     const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), number);
     if (error != std::errc{} || end != text.data() + text.size()) {
-        throw UserError("Некорректная кнопка. Откройте /list-local заново.");
+        throw UserError("Invalid button. Run /list-local again.");
     }
     return number;
 }
@@ -76,28 +76,23 @@ std::uint64_t local_button_number(std::string_view text) {
 dpp::message local_audio_menu(const LocalAudioPage& listing, std::size_t page,
                               std::uint64_t interaction_id) {
     auto response = safe_message("");
-    dpp::component songs;
     for (std::size_t index = 0; index < listing.filenames.size(); ++index) {
         const auto stem = std::filesystem::u8path(listing.filenames[index]).stem().u8string();
         const std::string title(stem.begin(), stem.end());
-        songs.add_component(dpp::component()
+        response.add_component(dpp::component().add_component(dpp::component()
             .set_label(safe_title(title, 80))
             .set_style(dpp::cos_primary)
-            .set_id("local:play:" + std::to_string(interaction_id) + ":" + std::to_string(index)));
-        if (index % 2 == 1 || index + 1 == listing.filenames.size()) {
-            response.add_component(songs);
-            songs = dpp::component();
-        }
+            .set_id("local:play:" + std::to_string(interaction_id) + ":" + std::to_string(index))));
     }
-    response.add_embed(dpp::embed().set_title("Локальные аудиозаписи")
-        .set_footer(dpp::embed_footer().set_text("Страница " + std::to_string(page) +
-            " / " + std::to_string(listing.total_pages) + " · записей: " +
+    response.add_embed(dpp::embed().set_title("Local audio")
+        .set_footer(dpp::embed_footer().set_text("Page " + std::to_string(page) +
+            " / " + std::to_string(listing.total_pages) + " · tracks: " +
             std::to_string(listing.total_files))));
     if (listing.total_pages > 1) {
         response.add_component(dpp::component()
-            .add_component(dpp::component().set_label("Назад").set_style(dpp::cos_secondary)
+            .add_component(dpp::component().set_label("Previous").set_style(dpp::cos_secondary)
                 .set_id("local:page:" + std::to_string(page - 1)).set_disabled(page == 1))
-            .add_component(dpp::component().set_label("Далее").set_style(dpp::cos_secondary)
+            .add_component(dpp::component().set_label("Next").set_style(dpp::cos_secondary)
                 .set_id("local:page:" + std::to_string(page + 1)).set_disabled(page == listing.total_pages)));
     }
     return response;
@@ -138,7 +133,7 @@ MusicBot::MusicBot(Config config)
             reply_error(event, error.what());
         } catch (const std::exception& error) {
             std::cerr << "Local audio button error: " << error.what() << '\n';
-            reply_error(event, "Не удалось обработать выбор записи.");
+            reply_error(event, "Could not process the selected track.");
         }
     });
     bot_.on_slashcommand([this](const dpp::slashcommand_t& event) {
@@ -152,7 +147,7 @@ MusicBot::MusicBot(Config config)
             reply_error(event, error.what());
         } catch (const std::exception& error) {
             std::cerr << "Slash command error: " << error.what() << '\n';
-            reply_error(event, "Произошла внутренняя ошибка.");
+            reply_error(event, "An internal error occurred.");
         }
     });
 }
@@ -181,26 +176,26 @@ void MusicBot::run() {
 
 void MusicBot::register_commands() {
     std::vector<dpp::slashcommand> commands;
-    commands.emplace_back("join", "Подключить бота к вашему голосовому каналу", bot_.me.id);
-    commands.emplace_back("play", "Добавить YouTube-видео в очередь", bot_.me.id)
+    commands.emplace_back("join", "Join your voice channel", bot_.me.id);
+    commands.emplace_back("play", "Add a YouTube video to the queue", bot_.me.id)
         .add_option(dpp::command_option(
-            dpp::co_string, "query", "Ссылка YouTube или поисковый запрос", true));
-    commands.emplace_back("list-local", "Показать локальные аудиозаписи", bot_.me.id)
-        .add_option(dpp::command_option(dpp::co_integer, "page", "Номер страницы", false)
+            dpp::co_string, "query", "YouTube URL or search query", true));
+    commands.emplace_back("list-local", "Browse local audio tracks", bot_.me.id)
+        .add_option(dpp::command_option(dpp::co_integer, "page", "Page number", false)
                         .set_min_value(1));
-    commands.emplace_back("play-local", "Добавить локальную аудиозапись в очередь", bot_.me.id)
+    commands.emplace_back("play-local", "Add a local audio track to the queue", bot_.me.id)
         .add_option(dpp::command_option(dpp::co_string, "file",
-            "Полное имя локального файла, включая .webm", true));
-    commands.emplace_back("pause", "Поставить воспроизведение на паузу", bot_.me.id);
-    commands.emplace_back("resume", "Продолжить воспроизведение", bot_.me.id);
-    commands.emplace_back("skip", "Пропустить текущий трек", bot_.me.id);
-    commands.emplace_back("stop", "Остановить музыку и очистить очередь", bot_.me.id);
-    commands.emplace_back("leave", "Остановить музыку и отключить бота", bot_.me.id);
-    commands.emplace_back("queue", "Показать очередь", bot_.me.id);
-    commands.emplace_back("now", "Показать текущий трек", bot_.me.id);
-    commands.emplace_back("volume", "Изменить громкость", bot_.me.id)
+            "Full local filename, including .webm", true));
+    commands.emplace_back("pause", "Pause playback", bot_.me.id);
+    commands.emplace_back("resume", "Resume playback", bot_.me.id);
+    commands.emplace_back("skip", "Skip the current track", bot_.me.id);
+    commands.emplace_back("stop", "Stop playback and clear the queue", bot_.me.id);
+    commands.emplace_back("leave", "Stop playback and leave the voice channel", bot_.me.id);
+    commands.emplace_back("queue", "Show the queue", bot_.me.id);
+    commands.emplace_back("now", "Show the current track", bot_.me.id);
+    commands.emplace_back("volume", "Set the volume", bot_.me.id)
         .add_option(dpp::command_option(
-            dpp::co_integer, "percent", "Громкость от 0 до 200 процентов", true)
+            dpp::co_integer, "percent", "Volume from 0 to 200 percent", true)
                         .set_min_value(0)
                         .set_max_value(200));
     if (config_.guild_id) {
@@ -217,18 +212,18 @@ void MusicBot::handle_command(const dpp::slashcommand_t& event) {
     const auto& name = command.name;
     const auto guild_id = snowflake_value(event.command.guild_id);
     if (guild_id == 0) {
-        throw UserError("Эта команда работает только на сервере.");
+        throw UserError("This command can only be used in a server.");
     }
 
     if (name == "join") {
         ensure_voice(event);
-        event.reply(ephemeral_message("✅ Подключаюсь к вашему голосовому каналу."));
+        event.reply(ephemeral_message("✅ Joining your voice channel."));
         return;
     }
     if (name == "play") {
         if (command.options.empty() ||
             !std::holds_alternative<std::string>(command.options.front().value)) {
-            throw UserError("Укажите ссылку YouTube или поисковый запрос.");
+            throw UserError("Enter a YouTube URL or search query.");
         }
         handle_play(event, std::get<std::string>(command.options.front().value));
         return;
@@ -237,18 +232,18 @@ void MusicBot::handle_command(const dpp::slashcommand_t& event) {
         std::int64_t page = 1;
         if (!command.options.empty()) {
             if (!std::holds_alternative<std::int64_t>(command.options.front().value)) {
-                throw UserError("Номер страницы должен быть целым числом.");
+                throw UserError("The page number must be an integer.");
             }
             page = std::get<std::int64_t>(command.options.front().value);
         }
-        if (page < 1 || page > 1000000) throw UserError("Недопустимый номер страницы.");
+        if (page < 1 || page > 1000000) throw UserError("Invalid page number.");
         handle_list_local(event, static_cast<std::size_t>(page));
         return;
     }
     if (name == "play-local") {
         if (command.options.empty() ||
             !std::holds_alternative<std::string>(command.options.front().value)) {
-            throw UserError("Укажите имя файла из /list-local.");
+            throw UserError("Enter the local filename, including .webm.");
         }
         handle_play_local(event, std::get<std::string>(command.options.front().value));
         return;
@@ -256,12 +251,12 @@ void MusicBot::handle_command(const dpp::slashcommand_t& event) {
     if (name == "queue") {
         const auto state = player(event).snapshot(15);
         if (!state.current && state.queued.empty()) {
-            event.reply(ephemeral_message("Очередь пуста."));
+            event.reply(ephemeral_message("The queue is empty."));
             return;
         }
         std::ostringstream text;
         if (state.current) {
-            text << "▶️ Сейчас: " << track_label(*state.current)
+            text << "▶️ Now playing: " << track_label(*state.current)
                  << " · `" << format_duration(*state.current)
                  << "`\n";
         }
@@ -273,21 +268,21 @@ void MusicBot::handle_command(const dpp::slashcommand_t& event) {
             ++shown;
         }
         if (state.total_queued > shown) {
-            text << "…и ещё " << state.total_queued - shown;
+            text << "…and more: " << state.total_queued - shown;
         }
         auto response = safe_message("");
-        response.add_embed(dpp::embed().set_title("Очередь").set_description(text.str()));
+        response.add_embed(dpp::embed().set_title("Queue").set_description(text.str()));
         event.reply(response);
         return;
     }
     if (name == "now") {
         const auto current = player(event).current_track();
         if (!current) {
-            event.reply(ephemeral_message("Сейчас ничего не играет."));
+            event.reply(ephemeral_message("Nothing is playing."));
             return;
         }
-        event.reply(safe_message("▶️ Сейчас играет: " + track_label(*current) + " · `" +
-                                 format_duration(*current) + "`, добавил " +
+        event.reply(safe_message("▶️ Now playing: " + track_label(*current) + " · `" +
+                                 format_duration(*current) + "`, requested by " +
                                  current->requester_name));
         return;
     }
@@ -296,42 +291,42 @@ void MusicBot::handle_command(const dpp::slashcommand_t& event) {
     auto& guild_player = player(event);
     if (name == "pause") {
         if (guild_player.paused()) {
-            throw UserError("Воспроизведение уже приостановлено.");
+            throw UserError("Playback is already paused.");
         }
         guild_player.set_paused(true);
-        event.reply(safe_message("⏸️ Воспроизведение приостановлено."));
+        event.reply(safe_message("⏸️ Playback paused."));
     } else if (name == "resume") {
         if (!guild_player.paused()) {
-            throw UserError("Воспроизведение не стоит на паузе.");
+            throw UserError("Playback is not paused.");
         }
         guild_player.set_paused(false);
-        event.reply(safe_message("▶️ Воспроизведение продолжено."));
+        event.reply(safe_message("▶️ Playback resumed."));
     } else if (name == "skip") {
         if (!guild_player.skip()) {
-            throw UserError("Сейчас ничего не воспроизводится.");
+            throw UserError("Nothing is playing.");
         }
-        event.reply(safe_message("⏭️ Трек пропущен."));
+        event.reply(safe_message("⏭️ Track skipped."));
     } else if (name == "stop") {
         const auto removed = guild_player.stop();
-        event.reply(safe_message("⏹️ Воспроизведение остановлено. Удалено из очереди: " +
+        event.reply(safe_message("⏹️ Playback stopped. Tracks removed from the queue: " +
                                  std::to_string(removed) + "."));
     } else if (name == "leave") {
         players_.remove(guild_id);
         event.from()->disconnect_voice(event.command.guild_id);
-        event.reply(ephemeral_message("Отключился от голосового канала."));
+        event.reply(ephemeral_message("Left the voice channel."));
     } else if (name == "volume") {
         if (command.options.empty() ||
             !std::holds_alternative<std::int64_t>(command.options.front().value)) {
-            throw UserError("Укажите громкость от 0 до 200.");
+            throw UserError("Enter a volume from 0 to 200.");
         }
         const auto percent = std::get<std::int64_t>(command.options.front().value);
         if (percent < 0 || percent > 200) {
-            throw UserError("Громкость должна быть от 0 до 200.");
+            throw UserError("Volume must be between 0 and 200.");
         }
         guild_player.set_volume(static_cast<int>(percent));
-        event.reply(safe_message("🔊 Громкость: **" + std::to_string(percent) + "%**."));
+        event.reply(safe_message("🔊 Volume: **" + std::to_string(percent) + "%**."));
     } else {
-        throw UserError("Неизвестная команда.");
+        throw UserError("Unknown command.");
     }
 }
 
@@ -352,9 +347,9 @@ void MusicBot::handle_play(
                     return;
                 }
                 ensure_voice(event);
-                auto response = "✅ Добавлено в очередь: " + track_label(track) +
+                auto response = "✅ Added to the queue: " + track_label(track) +
                                 " · `" + format_duration(track) +
-                                "` · позиция **";
+                                "` · position **";
                 const auto position = player(event).enqueue(std::move(track), event.from());
                 event.edit_original_response(
                     safe_message(response + std::to_string(position) + "**"));
@@ -380,7 +375,7 @@ void MusicBot::handle_play_local(const dpp::interaction_create_t& event, const s
         throw UserError(error.what());
     }
     ensure_voice(event);
-    auto response = "✅ Добавлено в очередь: " + track_label(track) + " · позиция **";
+    auto response = "✅ Added to the queue: " + track_label(track) + " · position **";
     const auto position = player(event).enqueue(std::move(track), event.from());
     // Playback must not wait for a Discord REST callback. One final response is
     // sufficient for this fast local operation; no deferred 'thinking' round-trip.
@@ -389,21 +384,21 @@ void MusicBot::handle_play_local(const dpp::interaction_create_t& event, const s
 
 void MusicBot::handle_local_button(const dpp::button_click_t& event) {
     const auto guild_id = snowflake_value(event.command.guild_id);
-    if (guild_id == 0) throw UserError("Эта команда работает только на сервере.");
+    if (guild_id == 0) throw UserError("This command can only be used in a server.");
     const std::string_view id(event.custom_id);
     if (id.starts_with("local:page:")) {
         const auto page = local_button_number(id.substr(11));
-        if (page == 0 || page > 1000000) throw UserError("Недопустимый номер страницы.");
+        if (page == 0 || page > 1000000) throw UserError("Invalid page number.");
         handle_list_local(event, static_cast<std::size_t>(page), true);
         return;
     }
-    if (!id.starts_with("local:play:")) throw UserError("Неизвестная кнопка.");
+    if (!id.starts_with("local:play:")) throw UserError("Unknown button.");
     const auto selection = id.substr(11);
     const auto separator = selection.find(':');
-    if (separator == std::string_view::npos) throw UserError("Некорректная кнопка.");
+    if (separator == std::string_view::npos) throw UserError("Invalid button.");
     const auto menu_id = local_button_number(selection.substr(0, separator));
     const auto index = local_button_number(selection.substr(separator + 1));
-    if (index >= LocalAudioLibrary::page_size) throw UserError("Некорректный номер записи.");
+    if (index >= LocalAudioLibrary::page_size) throw UserError("Invalid track number.");
     const auto filename = local_menus_.select(menu_id, static_cast<std::size_t>(index),
         snowflake_value(event.command.get_issuing_user().id), guild_id);
     handle_play_local(event, filename);
@@ -418,7 +413,7 @@ void MusicBot::handle_list_local(const dpp::interaction_create_t& event, std::si
                 const auto listing = local_audio_.list(page);
                 if (stop_token.stop_requested()) return;
                 if (listing.total_files == 0) {
-                    event.edit_original_response(safe_message("Локальных записей пока нет."));
+                    event.edit_original_response(safe_message("No local audio tracks are available yet."));
                     return;
                 }
                 const auto menu_id = snowflake_value(event.command.id);
@@ -448,11 +443,11 @@ void MusicBot::ensure_voice(const dpp::interaction_create_t& event) {
     }
     auto* guild = dpp::find_guild(event.command.guild_id);
     if (guild == nullptr) {
-        throw UserError("Сервер отсутствует в кэше Discord.");
+        throw UserError("The server is not in the Discord cache.");
     }
     if (current != nullptr) {
         if (player(event).busy()) {
-            throw UserError("Бот уже занят в другом голосовом канале.");
+            throw UserError("The bot is already playing in another voice channel.");
         }
         shard->disconnect_voice(event.command.guild_id);
     }
@@ -460,7 +455,7 @@ void MusicBot::ensure_voice(const dpp::interaction_create_t& event) {
     // event cannot be lost before the first /play-local or /play command.
     player(event).reset_voice_ready();
     if (!guild->connect_member_voice(bot_, event.command.get_issuing_user().id, false, true)) {
-        throw UserError("Не удалось подключиться к голосовому каналу.");
+        throw UserError("Could not join the voice channel.");
     }
 }
 
@@ -468,10 +463,10 @@ dpp::discord_voice_client* MusicBot::require_same_voice(const dpp::slashcommand_
     const auto wanted_channel = member_voice_channel(event);
     auto* connection = event.from()->get_voice(event.command.guild_id);
     if (connection == nullptr || connection->voiceclient == nullptr) {
-        throw UserError("Бот сейчас не подключён к голосовому каналу.");
+        throw UserError("The bot is not connected to a voice channel.");
     }
     if (snowflake_value(connection->channel_id) != wanted_channel) {
-        throw UserError("Войдите в тот же голосовой канал, что и бот.");
+        throw UserError("Join the same voice channel as the bot.");
     }
     return connection->voiceclient.get();
 }
@@ -479,12 +474,12 @@ dpp::discord_voice_client* MusicBot::require_same_voice(const dpp::slashcommand_
 std::uint64_t MusicBot::member_voice_channel(const dpp::interaction_create_t& event) const {
     auto* guild = dpp::find_guild(event.command.guild_id);
     if (guild == nullptr) {
-        throw UserError("Сервер отсутствует в кэше Discord.");
+        throw UserError("The server is not in the Discord cache.");
     }
     const auto user_id = event.command.get_issuing_user().id;
     const auto member = guild->voice_members.find(user_id);
     if (member == guild->voice_members.end() || member->second.channel_id.empty()) {
-        throw UserError("Сначала войдите в голосовой канал.");
+        throw UserError("Join a voice channel first.");
     }
     return snowflake_value(member->second.channel_id);
 }

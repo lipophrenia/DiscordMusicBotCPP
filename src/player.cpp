@@ -195,8 +195,8 @@ void GuildPlayer::run(std::stop_token stop_token) {
                 std::chrono::steady_clock::now() - voice_wait_started).count();
             std::clog << "Voice ready: " << track->title << " (waited " << voice_wait_ms << " ms)\n";
             announce(track->text_channel_id,
-                     "▶️ Сейчас играет: **" + track->title + "** (`" +
-                         format_duration(*track) + "`), добавил " + track->requester_name);
+                     "▶️ Now playing: **" + track->title + "** (`" +
+                         format_duration(*track) + "`), requested by " + track->requester_name);
             play_track(*track, generation, stop_token);
         } catch (const std::exception& error) {
             if (!stop_token.stop_requested() &&
@@ -204,8 +204,8 @@ void GuildPlayer::run(std::stop_token stop_token) {
                 std::cerr << "Playback error in guild " << guild_id_ << ": " << error.what()
                           << '\n';
                 announce(track->text_channel_id,
-                         "⚠️ Не удалось воспроизвести **" + track->title +
-                             "**; перехожу к следующему треку.");
+                         "⚠️ Could not play **" + track->title +
+                             "**; skipping to the next track.");
             }
         }
 

@@ -11,7 +11,7 @@ int main(int argc, char** argv) {
     try {
         std::clog << std::unitbuf;
         if (argc > 1 && std::string_view(argv[1]) == "--version") {
-            std::cout << "discord-music-bot 2.1.0\n";
+            std::cout << "discord-music-bot 2.1.1\n";
             return 0;
         }
         const auto executable = argc > 0 ? std::filesystem::path(argv[0])

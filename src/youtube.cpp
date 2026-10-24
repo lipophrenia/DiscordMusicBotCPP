@@ -64,7 +64,7 @@ const nlohmann::json& first_item(const nlohmann::json& root) {
             }
         }
     }
-    throw ExtractionError("По запросу ничего не найдено.");
+    throw ExtractionError("No results found for this query.");
 }
 
 std::string json_string(const nlohmann::json& value, const char* key) {
@@ -160,13 +160,13 @@ Track YouTubeExtractor::create_track(
     std::stop_token stop_token) const {
     const auto query = trim(raw_query);
     if (query.empty()) {
-        throw ExtractionError("Укажите ссылку на YouTube или поисковый запрос.");
+        throw ExtractionError("Enter a YouTube URL or search query.");
     }
     if (query.size() > 500) {
-        throw ExtractionError("Ссылка или поисковый запрос слишком длинные.");
+        throw ExtractionError("The URL or search query is too long.");
     }
     if (begins_with_http(query) && !is_youtube_url(query)) {
-        throw ExtractionError("Поддерживаются только ссылки YouTube.");
+        throw ExtractionError("Only YouTube URLs are supported.");
     }
     const auto target = begins_with_http(query) ? query : "ytsearch1:" + query;
     std::vector<std::string> arguments{"--dump-single-json", "--skip-download"};
@@ -175,11 +175,11 @@ Track YouTubeExtractor::create_track(
     auto result = capture_process(config_.yt_dlp_path, arguments, 16U * 1024U * 1024U,
                                   stop_token);
     if (result.cancelled || stop_token.stop_requested()) {
-        throw ExtractionError("Получение данных отменено.");
+        throw ExtractionError("Metadata extraction was cancelled.");
     }
     if (result.exit_code != 0) {
         const auto details = process_error(result);
-        throw ExtractionError(details.empty() ? "yt-dlp не смог открыть видео."
+        throw ExtractionError(details.empty() ? "yt-dlp could not open the video."
                                               : "yt-dlp: " + details);
     }
 
@@ -187,7 +187,7 @@ Track YouTubeExtractor::create_track(
     try {
         root = nlohmann::json::parse(result.output.begin(), result.output.end());
     } catch (const nlohmann::json::exception&) {
-        throw ExtractionError("yt-dlp вернул некорректные метаданные.");
+        throw ExtractionError("yt-dlp returned invalid metadata.");
     }
     const auto& item = first_item(root);
     auto webpage_url = json_string(item, "webpage_url");
@@ -195,13 +195,13 @@ Track YouTubeExtractor::create_track(
         webpage_url = json_string(item, "original_url");
     }
     if (!is_youtube_url(webpage_url)) {
-        throw ExtractionError("Не удалось получить ссылку на видео YouTube.");
+        throw ExtractionError("Could not retrieve the YouTube video URL.");
     }
 
     Track track;
     track.title = json_string(item, "title");
     if (track.title.empty()) {
-        track.title = "Без названия";
+        track.title = "Untitled";
     }
     track.webpage_url = std::move(webpage_url);
     if (const auto duration = item.find("duration");
@@ -210,7 +210,7 @@ Track YouTubeExtractor::create_track(
     }
     if (config_.max_track_duration > 0 && track.duration_seconds &&
         *track.duration_seconds > config_.max_track_duration) {
-        throw ExtractionError("Видео превышает настроенный лимит длительности.");
+        throw ExtractionError("The video exceeds the configured duration limit.");
     }
     track.thumbnail = json_string(item, "thumbnail");
     track.is_live = item.value("is_live", false);
@@ -241,19 +241,19 @@ MediaStream YouTubeExtractor::resolve_stream(
     }
     if (result.exit_code != 0) {
         const auto details = process_error(result);
-        throw ExtractionError(details.empty() ? "yt-dlp не смог получить URL потока WebM/Opus."
+        throw ExtractionError(details.empty() ? "yt-dlp could not retrieve the WebM/Opus stream URL."
                                               : "yt-dlp: " + details);
     }
     nlohmann::json root;
     try {
         root = nlohmann::json::parse(result.output.begin(), result.output.end());
     } catch (const nlohmann::json::exception&) {
-        throw ExtractionError("yt-dlp вернул некорректное описание медиапотока.");
+        throw ExtractionError("yt-dlp returned invalid media stream metadata.");
     }
     const auto& item = first_item(root);
     auto url = selected_media_url(item);
     if (!begins_with_http(url)) {
-        throw ExtractionError("yt-dlp не вернул прямой URL медиапотока.");
+        throw ExtractionError("yt-dlp did not return a direct media stream URL.");
     }
     return MediaStream{std::move(url), media_headers(item)};
 }

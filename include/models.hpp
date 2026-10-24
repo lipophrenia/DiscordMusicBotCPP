@@ -32,10 +32,10 @@ struct Track {
 
 inline std::string format_duration(const Track& track) {
     if (track.is_live) {
-        return "прямой эфир";
+        return "live";
     }
     if (!track.duration_seconds) {
-        return "неизвестно";
+        return "unknown";
     }
     auto seconds = std::max<std::int64_t>(0, *track.duration_seconds);
     const auto hours = seconds / 3600;

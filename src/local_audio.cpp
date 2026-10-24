@@ -51,17 +51,17 @@ LocalAudioLibrary::LocalAudioLibrary(std::filesystem::path directory)
     : directory_(std::filesystem::absolute(std::move(directory)).lexically_normal()) {}
 
 LocalAudioPage LocalAudioLibrary::list(std::size_t page) const {
-    if (page == 0) throw LocalAudioError("Номер страницы должен быть больше нуля.");
+    if (page == 0) throw LocalAudioError("The page number must be greater than zero.");
     std::error_code error;
     const auto status = std::filesystem::status(directory_, error);
     if (error == std::errc::no_such_file_or_directory ||
         (!error && !std::filesystem::exists(status))) return {};
     if (error || !std::filesystem::is_directory(status)) {
-        throw LocalAudioError("Каталог локальной музыки недоступен. Проверьте LOCAL_AUDIO_DIR.");
+        throw LocalAudioError("The local audio directory is unavailable. Check LOCAL_AUDIO_DIR.");
     }
     std::vector<std::string> names;
     std::filesystem::directory_iterator iterator(directory_, error);
-    if (error) throw LocalAudioError("Не удалось прочитать каталог локальной музыки.");
+    if (error) throw LocalAudioError("Could not read the local audio directory.");
     const std::filesystem::directory_iterator end;
     while (iterator != end) {
         const auto& entry = *iterator;
@@ -71,14 +71,14 @@ LocalAudioPage LocalAudioLibrary::list(std::size_t page) const {
             if (!error && std::filesystem::is_regular_file(entry_status)) names.push_back(filename);
         }
         iterator.increment(error);
-        if (error) throw LocalAudioError("Не удалось прочитать каталог локальной музыки.");
+        if (error) throw LocalAudioError("Could not read the local audio directory.");
     }
     std::sort(names.begin(), names.end());
     LocalAudioPage result;
     result.total_files = names.size();
     result.total_pages = (names.size() + page_size - 1) / page_size;
     if (names.empty()) return result;
-    if (page > result.total_pages) throw LocalAudioError("Такой страницы нет. Используйте /list-local page:1.");
+    if (page > result.total_pages) throw LocalAudioError("This page does not exist. Use /list-local page:1.");
     const auto start = (page - 1) * page_size;
     const auto count = std::min(page_size, names.size() - start);
     result.filenames.assign(names.begin() + start, names.begin() + start + count);
@@ -87,13 +87,13 @@ LocalAudioPage LocalAudioLibrary::list(std::size_t page) const {
 
 std::filesystem::path LocalAudioLibrary::resolve(const std::string& filename) const {
     if (!allowed_filename(filename)) {
-        throw LocalAudioError("Укажите имя .webm-файла из /list-local, без пути к каталогу.");
+        throw LocalAudioError("Enter a local .webm filename without a directory path.");
     }
     const auto path = directory_ / std::filesystem::u8path(filename);
     std::error_code error;
     const auto status = std::filesystem::symlink_status(path, error);
     if (error || !std::filesystem::is_regular_file(status)) {
-        throw LocalAudioError("Локальная запись не найдена. Обновите список через /list-local.");
+        throw LocalAudioError("Local audio track not found. Refresh the list with /list-local.");
     }
     return path;
 }
@@ -123,25 +123,25 @@ bool LocalAudioLibrary::stream(const std::string& filename, const OutputHandler&
     FileDescriptor input(open(path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK));
     struct stat status{};
     if (input.get() < 0 || fstat(input.get(), &status) != 0 || !S_ISREG(status.st_mode)) {
-        throw LocalAudioError("Не удалось открыть локальную запись для чтения.");
+        throw LocalAudioError("Could not open the local audio track for reading.");
     }
     while (!stop.stop_requested()) {
         const auto count = read(input.get(), buffer.data(), buffer.size());
         if (count < 0 && errno == EINTR) continue;
-        if (count < 0) throw LocalAudioError("Ошибка чтения локальной записи.");
+        if (count < 0) throw LocalAudioError("Could not read the local audio track.");
         if (count == 0) return true;
         if (!output(std::span(buffer.data(), static_cast<std::size_t>(count)))) return false;
     }
 #else
     std::ifstream input(path, std::ios::binary);
-    if (!input) throw LocalAudioError("Не удалось открыть локальную запись для чтения.");
+    if (!input) throw LocalAudioError("Could not open the local audio track for reading.");
     while (!stop.stop_requested()) {
         input.read(reinterpret_cast<char*>(buffer.data()), buffer.size());
         const auto count = input.gcount();
         if (count > 0 && !output(std::span(buffer.data(), static_cast<std::size_t>(count)))) return false;
-        if (input.bad()) throw LocalAudioError("Ошибка чтения локальной записи.");
+        if (input.bad()) throw LocalAudioError("Could not read the local audio track.");
         if (input.eof()) return true;
-        if (input.fail()) throw LocalAudioError("Ошибка чтения локальной записи.");
+        if (input.fail()) throw LocalAudioError("Could not read the local audio track.");
     }
 #endif
     return false;

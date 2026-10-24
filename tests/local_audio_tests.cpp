@@ -87,8 +87,9 @@ void test_listing_selection() {
     require(mkfifo((work.path / "audio" / "pipe.webm").c_str(), 0600) == 0, "cannot create FIFO fixture");
 #endif
     const auto first = library.list();
-    require(first.total_files == 6 && first.total_pages == 2 && first.filenames.size() == 5, "pagination failed");
-    require(first.filenames.front() == "a.webm" && library.list(2).filenames.front() == "f.WEBM", "sorting failed");
+    require(first.total_files == 6 && first.total_pages == 2 && first.filenames.size() == 4, "pagination failed");
+    require(first.filenames == std::vector<std::string>{"a.webm", "b.webm", "c.webm", "d.webm"}, "first page sorting failed");
+    require(library.list(2).filenames == std::vector<std::string>{"e.webm", "f.WEBM"}, "last page lost or duplicated tracks");
     fails([&] { static_cast<void>(library.list(0)); });
     fails([&] { static_cast<void>(library.list(3)); });
     for (auto name : {"C:outside.webm", "../outside.webm", "/tmp/outside.webm", "..\\outside.webm", ".env", "link.webm", "pipe.webm", "ignored.mp3", "directory.webm", "missing.webm"})

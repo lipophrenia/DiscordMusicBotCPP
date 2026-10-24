@@ -23,7 +23,8 @@ struct LocalAudioPage {
 
 class LocalAudioLibrary {
 public:
-    static constexpr std::size_t page_size = 5;
+    // Four song rows leave one action row for pagination.
+    static constexpr std::size_t page_size = 4;
     explicit LocalAudioLibrary(std::filesystem::path directory);
 
     [[nodiscard]] LocalAudioPage list(std::size_t page = 1) const;

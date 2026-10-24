@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(DiscordMusicBotNative VERSION 2.1.0 LANGUAGES CXX)
+project(DiscordMusicBotNative VERSION 2.1.1 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -139,9 +139,10 @@ if(MUSICBOT_BUNDLED_DENO)
             RENAME deno)
 endif()
 
+set(CPACK_VERBATIM_VARIABLES TRUE)
 set(CPACK_GENERATOR DEB)
 set(CPACK_PACKAGE_NAME discord-music-bot)
-set(CPACK_PACKAGE_CONTACT "Discord Music Bot maintainers")
+set(CPACK_PACKAGE_CONTACT [=[Maxim "lipophrenia-" Ryabtsev]=])
 set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Native C++ Discord bot for YouTube audio")
 set(CPACK_PACKAGE_VERSION ${PROJECT_VERSION})
 set(CPACK_PACKAGING_INSTALL_PREFIX /usr)
