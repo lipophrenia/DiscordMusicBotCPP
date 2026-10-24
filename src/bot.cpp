@@ -1,6 +1,7 @@
 #include "bot.hpp"
 
 #include <algorithm>
+#include <charconv>
 #include <iostream>
 #include <sstream>
 #include <string_view>
@@ -27,11 +28,11 @@ dpp::message ephemeral_message(std::string text) {
     return message;
 }
 
-std::string safe_title(std::string title) {
+std::string safe_title(std::string title, std::size_t maximum_bytes = 100) {
     std::replace(title.begin(), title.end(), '\n', ' ');
     std::replace(title.begin(), title.end(), '\r', ' ');
-    if (title.size() > 100) {
-        std::size_t end = 97;
+    if (title.size() > maximum_bytes) {
+        std::size_t end = maximum_bytes - 3;
         while (end > 0 && (static_cast<unsigned char>(title[end]) & 0xC0) == 0x80) --end;
         title.resize(end);
         title += "…";
@@ -63,6 +64,49 @@ std::string track_line(std::size_t index, const Track& track) {
     return output.str();
 }
 
+std::uint64_t local_button_number(std::string_view text) {
+    std::uint64_t number{};
+    const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), number);
+    if (error != std::errc{} || end != text.data() + text.size()) {
+        throw UserError("Некорректная кнопка. Откройте /list-local заново.");
+    }
+    return number;
+}
+
+dpp::message local_audio_menu(const LocalAudioPage& listing, std::size_t page,
+                              std::uint64_t interaction_id) {
+    auto response = safe_message("");
+    std::ostringstream text;
+    text << "Нажмите на песню, чтобы добавить её в очередь.\n\n";
+    dpp::component songs;
+    for (std::size_t index = 0; index < listing.filenames.size(); ++index) {
+        const auto stem = std::filesystem::u8path(listing.filenames[index]).stem().u8string();
+        const std::string title(stem.begin(), stem.end());
+        text << index + 1 << ". " << escape_markdown(title) << '\n';
+        songs.add_component(dpp::component()
+            .set_label(safe_title(std::to_string(index + 1) + ". " + title, 80))
+            .set_style(dpp::cos_primary)
+            .set_id("local:play:" + std::to_string(interaction_id) + ":" + std::to_string(index)));
+        if (index % 2 == 1 || index + 1 == listing.filenames.size()) {
+            response.add_component(songs);
+            songs = dpp::component();
+        }
+    }
+    response.add_embed(dpp::embed().set_title("Локальные аудиозаписи")
+        .set_description(text.str())
+        .set_footer(dpp::embed_footer().set_text("Страница " + std::to_string(page) +
+            " / " + std::to_string(listing.total_pages) + " · записей: " +
+            std::to_string(listing.total_files))));
+    if (listing.total_pages > 1) {
+        response.add_component(dpp::component()
+            .add_component(dpp::component().set_label("Назад").set_style(dpp::cos_secondary)
+                .set_id("local:page:" + std::to_string(page - 1)).set_disabled(page == 1))
+            .add_component(dpp::component().set_label("Далее").set_style(dpp::cos_secondary)
+                .set_id("local:page:" + std::to_string(page + 1)).set_disabled(page == listing.total_pages)));
+    }
+    return response;
+}
+
 }  // namespace
 
 MusicBot::MusicBot(Config config)
@@ -86,6 +130,19 @@ MusicBot::MusicBot(Config config)
             register_commands();
             bot_.set_presence(dpp::presence(dpp::ps_online, dpp::at_game, "/play"));
             std::clog << "Discord Music Bot started as " << bot_.me.username << '\n';
+        }
+    });
+    bot_.on_button_click([this](const dpp::button_click_t& event) {
+        if (!event.custom_id.starts_with("local:")) return;
+        try {
+            handle_local_button(event);
+        } catch (const UserError& error) {
+            reply_error(event, error.what());
+        } catch (const LocalAudioError& error) {
+            reply_error(event, error.what());
+        } catch (const std::exception& error) {
+            std::cerr << "Local audio button error: " << error.what() << '\n';
+            reply_error(event, "Не удалось обработать выбор записи.");
         }
     });
     bot_.on_slashcommand([this](const dpp::slashcommand_t& event) {
@@ -137,7 +194,7 @@ void MusicBot::register_commands() {
                         .set_min_value(1));
     commands.emplace_back("play-local", "Добавить локальную аудиозапись в очередь", bot_.me.id)
         .add_option(dpp::command_option(dpp::co_string, "file",
-            "Точное имя файла из /list-local, включая .webm", true));
+            "Полное имя локального файла, включая .webm", true));
     commands.emplace_back("pause", "Поставить воспроизведение на паузу", bot_.me.id);
     commands.emplace_back("resume", "Продолжить воспроизведение", bot_.me.id);
     commands.emplace_back("skip", "Пропустить текущий трек", bot_.me.id);
@@ -315,7 +372,7 @@ void MusicBot::handle_play(
     });
 }
 
-void MusicBot::handle_play_local(const dpp::slashcommand_t& event, const std::string& filename) {
+void MusicBot::handle_play_local(const dpp::interaction_create_t& event, const std::string& filename) {
     member_voice_channel(event);
     const auto user = event.command.get_issuing_user();
     Track track;
@@ -334,8 +391,30 @@ void MusicBot::handle_play_local(const dpp::slashcommand_t& event, const std::st
     event.reply(safe_message(response + std::to_string(position) + "**"));
 }
 
-void MusicBot::handle_list_local(const dpp::slashcommand_t& event, std::size_t page) {
-    event.thinking(true, [this, event, page](const dpp::confirmation_callback_t& callback) {
+void MusicBot::handle_local_button(const dpp::button_click_t& event) {
+    const auto guild_id = snowflake_value(event.command.guild_id);
+    if (guild_id == 0) throw UserError("Эта команда работает только на сервере.");
+    const std::string_view id(event.custom_id);
+    if (id.starts_with("local:page:")) {
+        const auto page = local_button_number(id.substr(11));
+        if (page == 0 || page > 1000000) throw UserError("Недопустимый номер страницы.");
+        handle_list_local(event, static_cast<std::size_t>(page), true);
+        return;
+    }
+    if (!id.starts_with("local:play:")) throw UserError("Неизвестная кнопка.");
+    const auto selection = id.substr(11);
+    const auto separator = selection.find(':');
+    if (separator == std::string_view::npos) throw UserError("Некорректная кнопка.");
+    const auto menu_id = local_button_number(selection.substr(0, separator));
+    const auto index = local_button_number(selection.substr(separator + 1));
+    if (index >= LocalAudioLibrary::page_size) throw UserError("Некорректный номер записи.");
+    const auto filename = local_menus_.select(menu_id, static_cast<std::size_t>(index),
+        snowflake_value(event.command.get_issuing_user().id), guild_id);
+    handle_play_local(event, filename);
+}
+
+void MusicBot::handle_list_local(const dpp::interaction_create_t& event, std::size_t page, bool update) {
+    const auto acknowledged = [this, event, page](const dpp::confirmation_callback_t& callback) {
         if (callback.is_error()) return;
         launch_task([this, event, page](std::stop_token stop_token) {
             try {
@@ -346,28 +425,25 @@ void MusicBot::handle_list_local(const dpp::slashcommand_t& event, std::size_t p
                     event.edit_original_response(safe_message("Локальных записей пока нет."));
                     return;
                 }
-                std::ostringstream text;
-                text << "Выберите имя файла для `/play-local file:...`.\n\n";
-                for (const auto& filename : listing.filenames) {
-                    text << escape_markdown(filename) << '\n';
-                }
-                auto response = safe_message("");
-                response.add_embed(dpp::embed().set_title("Локальные аудиозаписи")
-                    .set_description(text.str())
-                    .set_footer(dpp::embed_footer().set_text("Страница " + std::to_string(page) +
-                        " / " + std::to_string(listing.total_pages) + " · записей: " +
-                        std::to_string(listing.total_files))));
-                event.edit_original_response(response);
+                const auto menu_id = snowflake_value(event.command.id);
+                local_menus_.remember(menu_id, snowflake_value(event.command.get_issuing_user().id),
+                                      snowflake_value(event.command.guild_id), listing.filenames);
+                event.edit_original_response(local_audio_menu(listing, page, menu_id));
             } catch (const std::exception& error) {
                 if (!stop_token.stop_requested()) {
                     event.edit_original_response(safe_message("❌ " + std::string(error.what())));
                 }
             }
         });
-    });
+    };
+    if (update) {
+        event.reply(dpp::ir_deferred_update_message, safe_message(""), acknowledged);
+    } else {
+        event.thinking(true, acknowledged);
+    }
 }
 
-void MusicBot::ensure_voice(const dpp::slashcommand_t& event) {
+void MusicBot::ensure_voice(const dpp::interaction_create_t& event) {
     const auto wanted_channel = member_voice_channel(event);
     auto* shard = event.from();
     auto* current = shard->get_voice(event.command.guild_id);
@@ -404,7 +480,7 @@ dpp::discord_voice_client* MusicBot::require_same_voice(const dpp::slashcommand_
     return connection->voiceclient.get();
 }
 
-std::uint64_t MusicBot::member_voice_channel(const dpp::slashcommand_t& event) const {
+std::uint64_t MusicBot::member_voice_channel(const dpp::interaction_create_t& event) const {
     auto* guild = dpp::find_guild(event.command.guild_id);
     if (guild == nullptr) {
         throw UserError("Сервер отсутствует в кэше Discord.");
@@ -417,7 +493,7 @@ std::uint64_t MusicBot::member_voice_channel(const dpp::slashcommand_t& event) c
     return snowflake_value(member->second.channel_id);
 }
 
-GuildPlayer& MusicBot::player(const dpp::slashcommand_t& event) {
+GuildPlayer& MusicBot::player(const dpp::interaction_create_t& event) {
     return players_.get(snowflake_value(event.command.guild_id), event.from());
 }
 
@@ -453,7 +529,7 @@ void MusicBot::launch_task(std::function<void(std::stop_token)> task) {
     tasks_.push_back(AsyncTask{std::move(done), std::move(thread)});
 }
 
-void MusicBot::reply_error(const dpp::slashcommand_t& event, const std::string& message) {
+void MusicBot::reply_error(const dpp::interaction_create_t& event, const std::string& message) {
     event.reply(ephemeral_message("❌ " + message));
 }
 

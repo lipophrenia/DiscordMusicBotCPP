@@ -132,10 +132,21 @@ Commands:
 /play-local file:My song.webm
 ```
 
-`file` is the exact filename including the extension, as shown by `/list-local`.
-Spaces and UTF-8 names are supported. Filenames stay valid when other recordings
-are added; there are no unstable numeric IDs. The list is sorted and paginated
-with five recordings per page, and refreshed on every request.
+`/list-local` shows a private, interactive list with five recordings per page.
+Titles and song buttons omit the `.webm` extension. Click a song to join your
+voice channel and queue that recording, starting playback if the player is idle.
+Use **Назад / Далее** to browse pages in the same message; `/list-local page:2`
+also works. Each page request refreshes the directory listing.
+
+Buttons keep the exact filename that was displayed, so adding or removing other
+recordings cannot change their target. Deleted files report an error. Buttons
+expire after 15 minutes or a bot restart; run `/list-local` again to refresh them.
+Long titles may be shortened on buttons; the full title is shown above them.
+Spaces and UTF-8 names are supported.
+
+`/play-local file:...` remains available for manual selection: `file` is the exact
+filename **including** `.webm`. Both commands use the same playback queue and
+voice-channel checks.
 
 `/play-local` joins your voice channel and adds the recording to the shared
 queue, starting immediately if the player is idle. YouTube and local recordings
