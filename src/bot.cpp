@@ -76,15 +76,12 @@ std::uint64_t local_button_number(std::string_view text) {
 dpp::message local_audio_menu(const LocalAudioPage& listing, std::size_t page,
                               std::uint64_t interaction_id) {
     auto response = safe_message("");
-    std::ostringstream text;
-    text << "Нажмите на песню, чтобы добавить её в очередь.\n\n";
     dpp::component songs;
     for (std::size_t index = 0; index < listing.filenames.size(); ++index) {
         const auto stem = std::filesystem::u8path(listing.filenames[index]).stem().u8string();
         const std::string title(stem.begin(), stem.end());
-        text << index + 1 << ". " << escape_markdown(title) << '\n';
         songs.add_component(dpp::component()
-            .set_label(safe_title(std::to_string(index + 1) + ". " + title, 80))
+            .set_label(safe_title(title, 80))
             .set_style(dpp::cos_primary)
             .set_id("local:play:" + std::to_string(interaction_id) + ":" + std::to_string(index)));
         if (index % 2 == 1 || index + 1 == listing.filenames.size()) {
@@ -93,7 +90,6 @@ dpp::message local_audio_menu(const LocalAudioPage& listing, std::size_t page,
         }
     }
     response.add_embed(dpp::embed().set_title("Локальные аудиозаписи")
-        .set_description(text.str())
         .set_footer(dpp::embed_footer().set_text("Страница " + std::to_string(page) +
             " / " + std::to_string(listing.total_pages) + " · записей: " +
             std::to_string(listing.total_files))));

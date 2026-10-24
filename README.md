@@ -133,7 +133,7 @@ Commands:
 ```
 
 `/list-local` shows a private, interactive list with five recordings per page.
-Titles and song buttons omit the `.webm` extension. Click a song to join your
+Song titles appear only on buttons, without the `.webm` extension. Click a song to join your
 voice channel and queue that recording, starting playback if the player is idle.
 Use **Назад / Далее** to browse pages in the same message; `/list-local page:2`
 also works. Each page request refreshes the directory listing.
@@ -141,7 +141,7 @@ also works. Each page request refreshes the directory listing.
 Buttons keep the exact filename that was displayed, so adding or removing other
 recordings cannot change their target. Deleted files report an error. Buttons
 expire after 15 minutes or a bot restart; run `/list-local` again to refresh them.
-Long titles may be shortened on buttons; the full title is shown above them.
+Long titles may be shortened on buttons; selection still uses the exact filename.
 Spaces and UTF-8 names are supported.
 
 `/play-local file:...` remains available for manual selection: `file` is the exact
